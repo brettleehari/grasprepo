@@ -10,7 +10,6 @@ from collections import Counter, defaultdict, namedtuple
 from importlib import resources
 from pathlib import Path
 
-from diskcache import Cache
 from grep_ast import TreeContext, filename_to_lang
 from pygments.lexers import guess_lexer_for_filename
 from pygments.token import Token
@@ -27,67 +26,9 @@ Tag = namedtuple("Tag", "rel_fname fname line name kind".split())
 SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError)
 
 class RepoMap:
-    CACHE_VERSION = 3
-    TAGS_CACHE_DIR = f".aider.tags.cache.v{CACHE_VERSION}"
-
-    warned_files = set()
-
-    def __init__(
-        self,
-        map_tokens=1024,
-        root=None,
-        main_model=None,
-        repo_content_prefix=None,
-        verbose=False,
-        max_context_window=None,
-        map_mul_no_files=8,
-        refresh="auto",
-    ):
-        self.verbose = verbose
-        self.refresh = refresh
-
-        if not root:
-            root = os.getcwd()
-        self.root = root
-        print(f"Initializing RepoMap with root: {root}, map_tokens: {map_tokens}")
-
-
-        self.load_tags_cache()
-        self.cache_threshold = 0.95
-
-        self.max_map_tokens = map_tokens
+    def __init__(self, map_mul_no_files=8):
         self.map_mul_no_files = map_mul_no_files
-        self.max_context_window = max_context_window
 
-        self.repo_content_prefix = repo_content_prefix
-
-        self.main_model = main_model
-
-        self.tree_cache = {}
-        self.tree_context_cache = {}
-        self.map_cache = {}
-        self.map_processing_time = 0
-        self.last_map = None
-
-        if self.verbose:
-            print(
-                f"RepoMap initialized with map_mul_no_files: {self.map_mul_no_files}"
-            )
-
-    def token_count(self, text):
-        len_text = len(text)
-        return len_text/4
-        if len_text < 200:
-            return self.main_model.token_count(text)
-
-        lines = text.splitlines(keepends=True)
-        num_lines = len(lines)
-        step = num_lines // 100 or 1
-        lines = lines[::step]
-        sample_text = "".join(lines)
-        sample_tokens = self.main_model.token_count(sample_text)
-        est_tokens = sample_tokens / len(sample_text) * len_text
-        return est_tokens
 
     def get_repo_map(
         self,
@@ -159,22 +100,11 @@ class RepoMap:
 
     def get_rel_fname(self, fname):
         try:
-            return os.path.relpath(fname, self.root)
+            return os.path.relpath(fname)
         except ValueError:
             # Issue #1288: ValueError: path is on mount 'C:', start on mount 'D:'
             # Just return the full fname.
             return fname
-
-    def load_tags_cache(self):
-        path = Path(self.root) / self.TAGS_CACHE_DIR
-        try:
-            self.TAGS_CACHE = Cache(path)
-        except SQLITE_ERRORS:
-            print(f"Warning: Unable to use tags cache, delete {path} to resolve.", file=sys.stderr)
-            self.TAGS_CACHE = dict()
-
-    def save_tags_cache(self):
-        pass
 
     def get_mtime(self, fname):
         try:
@@ -182,30 +112,9 @@ class RepoMap:
         except FileNotFoundError:
             print(f"Warning: File not found error: {fname}", file=sys.stderr)
 
+
+
     def get_tags(self, fname, rel_fname):
-        # Check if the file is in the cache and if the modification time has not changed
-        file_mtime = self.get_mtime(fname)
-        if file_mtime is None:
-            return []
-
-        cache_key = fname
-        val = self.TAGS_CACHE.get(cache_key)  # Issue #1308
-        if val is not None and val.get("mtime") == file_mtime:
-            return self.TAGS_CACHE[cache_key]["data"]
-
-        # miss!
-        data = list(self.get_tags_raw(fname, rel_fname))
-
-        # Update the cache
-        try:
-            self.TAGS_CACHE[cache_key] = {"mtime": file_mtime, "data": data}
-            self.save_tags_cache()
-        except SQLITE_ERRORS:
-            pass
-
-        return data
-
-    def get_tags_raw(self, fname, rel_fname):
         lang = filename_to_lang(fname)
         if not lang:
             return
@@ -288,10 +197,10 @@ class RepoMap:
                 line=-1,
             )
 
-    def get_ranked_tags(
-        self, chat_fnames, other_fnames, mentioned_fnames, mentioned_idents, progress=None
-    ):
+    def get_ranked_tags(self, list_of_files):
         import networkx as nx
+        from pyvis.network import Network
+
 
         defines = defaultdict(set)
         references = defaultdict(list)
@@ -299,53 +208,27 @@ class RepoMap:
 
         personalization = dict()
 
-        fnames = set(chat_fnames).union(set(other_fnames))
-        chat_rel_fnames = set()
 
-        fnames = sorted(fnames)
+
+        list_of_files = sorted(list_of_files)
 
         # Default personalization for unspecified files is 1/num_nodes
         # https://networkx.org/documentation/stable/_modules/networkx/algorithms/link_analysis/pagerank_alg.html#pagerank
-        personalize = 100 / len(fnames)
+        personalize = 100 / len(list_of_files)
+        #sys.exit(0) #breakpoint-1
 
-        if len(fnames) - len(self.TAGS_CACHE) > 100:
-            print(
-                "Initial repo scan can be slow in larger repos, but only happens once."
-            )
-            fnames = tqdm(fnames, desc="Scanning repo")
-            showing_bar = True
-        else:
-            showing_bar = False
 
-        for fname in fnames:
-            if progress and not showing_bar:
-                progress()
+        for fname in list_of_files:
 
-            try:
-                file_ok = Path(fname).is_file()
-            except OSError:
-                file_ok = False
-
-            if not file_ok:
-                if fname not in self.warned_files:
-                    print(f"Warning: Repo-map can't include {fname}", file=sys.stderr)
-                    print(
-                        "Has it been deleted from the file system but not from git?"
-                    )
-                    self.warned_files.add(fname)
-                continue
 
             # dump(fname)
             rel_fname = self.get_rel_fname(fname)
 
-            if fname in chat_fnames:
-                personalization[rel_fname] = personalize
-                chat_rel_fnames.add(rel_fname)
-
-            if rel_fname in mentioned_fnames:
-                personalization[rel_fname] = personalize
 
             tags = list(self.get_tags(fname, rel_fname))
+            print(f"Tags for file: {rel_fname} are: {tags}")
+            #sys.exit(0) #breakpoint-2
+
             if tags is None:
                 continue
 
@@ -370,14 +253,13 @@ class RepoMap:
         G = nx.MultiDiGraph()
 
         for ident in idents:
-            if progress:
-                progress()
+
 
             definers = defines[ident]
-            if ident in mentioned_idents:
-                mul = 10
-            elif ident.startswith("_"):
+            if ident.startswith("_"):
                 mul = 0.1
+            #if ident in mentioned_idents: #if we want to give more weight to the mentioned idents
+            #    mul = 10
             else:
                 mul = 1
 
@@ -391,6 +273,7 @@ class RepoMap:
                     num_refs = math.sqrt(num_refs)
 
                     G.add_edge(referencer, definer, weight=mul * num_refs, ident=ident)
+        # Initialize Pyvis network and convert NetworkX graph to it
 
         if not references:
             pass
@@ -411,8 +294,7 @@ class RepoMap:
         # distribute the rank from each source node, across all of its out edges
         ranked_definitions = defaultdict(float)
         for src in G.nodes:
-            if progress:
-                progress()
+
 
             src_rank = ranked[src]
             total_weight = sum(data["weight"] for _src, _dst, data in G.out_edges(src, data=True))
@@ -428,7 +310,32 @@ class RepoMap:
         )
 
         dump(ranked_definitions)
+        # Compute degree centrality (or any other ranking metric)
+        centrality = nx.degree_centrality(G)
 
+        # Find the node with the highest centrality
+        highest_centrality_node = max(centrality, key=centrality.get)
+
+        # Initialize a Pyvis Network object
+        net = Network(notebook=True)
+
+        # Add nodes with different colors based on their rank
+        for node in G.nodes():
+            if node == highest_centrality_node:
+                # Mark the highest-ranked node in red
+                net.add_node(node, label=f"Node {node}", color="red", size=25, title="Highest Rank")
+            else:
+                # Other nodes in blue
+                net.add_node(node, label=f"Node {node}", color="blue", size=15)
+
+        # Add edges from the NetworkX graph
+        for edge in G.edges():
+            net.add_edge(edge[0], edge[1])
+
+        graphname = "graph"+str(time.time())+".html"
+        net.show(graphname)
+        for node, neighbors in G.adjacency():
+            print(f"Node {node}: {list(neighbors)}")
         for (fname, ident), rank in ranked_definitions:
             # print(f"{rank:.03f} {fname} {ident}")
             #if fname in chat_rel_fnames:
@@ -436,209 +343,63 @@ class RepoMap:
             ranked_tags += list(definitions.get((fname, ident), []))
         print("##################################")
         print(ranked_tags)
-        rel_other_fnames_without_tags = set(self.get_rel_fname(fname) for fname in other_fnames)
 
         fnames_already_included = set(rt[0] for rt in ranked_tags)
 
         top_rank = sorted([(rank, node) for (node, rank) in ranked.items()], reverse=True)
         print(top_rank)
+        #sys.exit(0) #breakpoint-3
         for rank, fname in top_rank:
-            if fname in rel_other_fnames_without_tags:
-                rel_other_fnames_without_tags.remove(fname)
             if fname not in fnames_already_included:
                 ranked_tags.append((fname,))
-        print("##################################")
+        print("############ranked tags######################")
         print(ranked_tags)
-        for fname in rel_other_fnames_without_tags:
-            ranked_tags.append((fname,))
-        print("##################################")
+        #sys.exit(0) #breakpoint-4
+        print("############ranked tags above######################")
         return ranked_tags
 
-    def get_ranked_tags_map(
-        self,
-        chat_fnames,
-        other_fnames=None,
-        max_map_tokens=None,
-        mentioned_fnames=None,
-        mentioned_idents=None,
-        force_refresh=False,
-    ):
-        # Create a cache key
-        cache_key = [
-            tuple(sorted(chat_fnames)) if chat_fnames else None,
-            tuple(sorted(other_fnames)) if other_fnames else None,
-            max_map_tokens,
-        ]
 
-        if self.refresh == "auto":
-            cache_key += [
-                tuple(sorted(mentioned_fnames)) if mentioned_fnames else None,
-                tuple(sorted(mentioned_idents)) if mentioned_idents else None,
-            ]
-        cache_key = tuple(cache_key)
-
-        use_cache = False
-        if not force_refresh:
-            if self.refresh == "manual" and self.last_map:
-                return self.last_map
-
-            if self.refresh == "always":
-                use_cache = False
-            elif self.refresh == "files":
-                use_cache = True
-            elif self.refresh == "auto":
-                use_cache = self.map_processing_time > 1.0
-
-            # Check if the result is in the cache
-            if use_cache and cache_key in self.map_cache:
-                return self.map_cache[cache_key]
-
-        # If not in cache or force_refresh is True, generate the map
-        start_time = time.time()
-        result = self.get_ranked_tags_map_uncached(
-            chat_fnames, other_fnames, max_map_tokens, mentioned_fnames, mentioned_idents
-        )
-        end_time = time.time()
-        self.map_processing_time = end_time - start_time
-
-        # Store the result in the cache
-        self.map_cache[cache_key] = result
-        self.last_map = result
-
-        return result
-
-    def get_ranked_tags_map_uncached(
-        self,
-        chat_fnames,
-        other_fnames=None,
-        max_map_tokens=None,
-        mentioned_fnames=None,
-        mentioned_idents=None,
-    ):
-        print("##################################")
-        print(f"Uncached ranked tags map for chat_fnames: {chat_fnames}, other_fnames: {other_fnames}")
-        if not other_fnames:
-            other_fnames = list()
-        if not max_map_tokens:
-            max_map_tokens = self.max_map_tokens
-        if not mentioned_fnames:
-            mentioned_fnames = set()
-        if not mentioned_idents:
-            mentioned_idents = set()
-
-        spin = Spinner("Updating repo map")
-
-        ranked_tags = self.get_ranked_tags(
-            chat_fnames,
-            other_fnames,
-            mentioned_fnames,
-            mentioned_idents,
-            progress=spin.step,
-        )
-
-        other_rel_fnames = sorted(set(self.get_rel_fname(fname) for fname in other_fnames))
-        special_fnames = filter_important_files(other_rel_fnames)
-        ranked_tags_fnames = set(tag[0] for tag in ranked_tags)
-        special_fnames = [fn for fn in special_fnames if fn not in ranked_tags_fnames]
-        special_fnames = [(fn,) for fn in special_fnames]
-
-        ranked_tags = special_fnames + ranked_tags
-
-        spin.step()
-
-        num_tags = len(ranked_tags)
-        lower_bound = 0
-        upper_bound = num_tags
-        best_tree = None
-        best_tree_tokens = 0
-
-        chat_rel_fnames = set(self.get_rel_fname(fname) for fname in chat_fnames)
-
-        self.tree_cache = dict()
-
-        middle = min(max_map_tokens // 25, num_tags)
-        """
-        while lower_bound <= upper_bound:
-            # dump(lower_bound, middle, upper_bound)
-
-            spin.step()
-
-            tree = self.to_tree(ranked_tags[:middle], chat_rel_fnames)
-            num_tokens = self.token_count(tree)
-
-            pct_err = abs(num_tokens - max_map_tokens) / max_map_tokens
-            ok_err = 0.15
-            if (num_tokens <= max_map_tokens and num_tokens > best_tree_tokens) or pct_err < ok_err:
-                best_tree = tree
-                best_tree_tokens = num_tokens
-
-                if pct_err < ok_err:
-                    break
-
-            if num_tokens < max_map_tokens:
-                lower_bound = middle + 1
-            else:
-                upper_bound = middle - 1
-
-            middle = (lower_bound + upper_bound) // 2
-        """
-        
-        best_tree = self.to_tree(ranked_tags, chat_rel_fnames)
-
-        spin.end()
-        return best_tree
-
-    tree_cache = dict()
 
     def render_tree(self, abs_fname, rel_fname, lois):
         print(f"Rendering tree for file: {rel_fname} with lines of interest: {lois}")
-        mtime = self.get_mtime(abs_fname)
-        key = (rel_fname, tuple(sorted(lois)), mtime)
 
-        if key in self.tree_cache:
-            return self.tree_cache[key]
+        # Read the file content directly
+        try:
+            with open(abs_fname, "r", encoding="utf-8") as f:
+                code = f.read()
+        except Exception as e:
+            print(f"Error reading {abs_fname}: {e}", file=sys.stderr)
+            return ""
 
-        if (
-            rel_fname not in self.tree_context_cache
-            or self.tree_context_cache[rel_fname]["mtime"] != mtime
-        ):
-            try:
-                with open(abs_fname, "r", encoding="utf-8") as f:
-                    code = f.read()
-            except Exception as e:
-                print(f"Error reading {abs_fname}: {e}", file=sys.stderr)
-                return ""
-            if not code.endswith("\n"):
-                code += "\n"
+        if not code.endswith("\n"):
+            code += "\n"
 
-            context = TreeContext(
-                rel_fname,
-                code,
-                color=False,
-                line_number=False,
-                child_context=False,
-                last_line=False,
-                margin=0,
-                mark_lois=False,
-                loi_pad=0,
-                # header_max=30,
-                show_top_of_file_parent_scope=False,
-            )
-            self.tree_context_cache[rel_fname] = {"context": context, "mtime": mtime}
+        context = TreeContext(
+            rel_fname,
+            code,
+            color=False,
+            line_number=False,
+            child_context=False,
+            last_line=False,
+            margin=0,
+            mark_lois=False,
+            loi_pad=0,
+        )
 
-        context = self.tree_context_cache[rel_fname]["context"]
         context.lines_of_interest = set()
         context.add_lines_of_interest(lois)
         context.add_context()
         res = context.format()
-        self.tree_cache[key] = res
         return res
+    
+    def get_tree(self, tags):
+        ranked_tags_fnames = set(tag[0] for tag in tags)
+        self.tree_cache = dict()
 
-    def to_tree(self, tags, chat_rel_fnames):
+    def to_tree(self, tags):
 
         print(f"Converting tags to tree structure, number of tags: {len(tags)}")
-        if not tags:
-            return ""
+
 
         cur_fname = None
         cur_abs_fname = None
@@ -673,18 +434,6 @@ class RepoMap:
         output = "\n".join([line[:100] for line in output.splitlines()]) + "\n"
 
         return output
-
-
-def find_src_files(directory):
-    if not os.path.isdir(directory):
-        return [directory]
-
-    src_files = []
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            src_files.append(os.path.join(root, file))
-    print(f"Found {len(src_files)} source files in {directory}")
-    return src_files
 
 
 def get_random_color():
@@ -724,24 +473,31 @@ def get_supported_languages_md():
 
     return res
 
+def parse_dir(directory):
+    if not os.path.isdir(directory):
+        return [directory]
+
+    src_files = []
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            src_files.append(os.path.join(root, file))
+    print(f"Found {len(src_files)} source files in {directory}")
+    return src_files
+
+
 
 def main():
 
-    fnames = sys.argv[1:]
+    unpacked = parse_dir(sys.argv[1])
 
-    chat_fnames = []
-    other_fnames = []
-    for fname in sys.argv[1:]:
-        if Path(fname).is_dir():
-            chat_fnames += find_src_files(fname)
-        else:
-            chat_fnames.append(fname)
 
-    rm = RepoMap(root=".")
-    repo_map = rm.get_ranked_tags_map(chat_fnames, other_fnames)
-
-    dump(len(repo_map))
-    print(repo_map)
+    rm = RepoMap()
+    rank_tags = rm.get_ranked_tags(unpacked)
+    #import pdb; pdb.set_trace()
+    repo_tree = rm.to_tree(rank_tags)
+    print(repo_tree)
 
 if __name__ == "__main__":
     main()
+
+
