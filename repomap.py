@@ -26,77 +26,10 @@ Tag = namedtuple("Tag", "rel_fname fname line name kind".split())
 SQLITE_ERRORS = (sqlite3.OperationalError, sqlite3.DatabaseError)
 
 class RepoMap:
-    def __init__(self, map_mul_no_files=8):
-        self.map_mul_no_files = map_mul_no_files
+    def __init__(self):
+        pass
 
 
-    def get_repo_map(
-        self,
-        chat_files,
-        other_files,
-        mentioned_fnames=None,
-        mentioned_idents=None,
-        force_refresh=False,
-    ):
-        print(f"Generating repo map with chat_files: {chat_files}, other_files: {other_files}")
-        if self.max_map_tokens <= 0:
-            return
-        if not other_files:
-            return
-        if not mentioned_fnames:
-            mentioned_fnames = set()
-        if not mentioned_idents:
-            mentioned_idents = set()
-
-        max_map_tokens = self.max_map_tokens
-
-        # With no files in the chat, give a bigger view of the entire repo
-        padding = 4096
-        if max_map_tokens and self.max_context_window:
-            target = min(
-                int(max_map_tokens * self.map_mul_no_files),
-                self.max_context_window - padding,
-            )
-        else:
-            target = 0
-        if not chat_files and self.max_context_window and target > 0:
-            max_map_tokens = target
-
-        print("Calling get_ranked_tags_map...")
-        try:
-            files_listing = self.get_ranked_tags_map(
-                chat_files,
-                other_files,
-                max_map_tokens,
-                mentioned_fnames,
-                mentioned_idents,
-                force_refresh,
-            )
-        except RecursionError:
-            print("Error: Disabling repo map, git repo too large?", file=sys.stderr)
-            self.max_map_tokens = 0
-            return
-
-        if not files_listing:
-            return
-
-        if self.verbose:
-            num_tokens = self.token_count(files_listing)
-            print(f"Repo-map: {num_tokens / 1024:.1f} k-tokens")
-
-        if chat_files:
-            other = "other "
-        else:
-            other = ""
-
-        if self.repo_content_prefix:
-            repo_content = self.repo_content_prefix.format(other=other)
-        else:
-            repo_content = ""
-
-        repo_content += files_listing
-
-        return repo_content
 
     def get_rel_fname(self, fname):
         try:
@@ -106,11 +39,7 @@ class RepoMap:
             # Just return the full fname.
             return fname
 
-    def get_mtime(self, fname):
-        try:
-            return os.path.getmtime(fname)
-        except FileNotFoundError:
-            print(f"Warning: File not found error: {fname}", file=sys.stderr)
+
 
 
 
@@ -333,7 +262,7 @@ class RepoMap:
             net.add_edge(edge[0], edge[1])
 
         graphname = "graph"+str(time.time())+".html"
-        net.show(graphname)
+        #net.show(graphname)
         for node, neighbors in G.adjacency():
             print(f"Node {node}: {list(neighbors)}")
         for (fname, ident), rank in ranked_definitions:
@@ -436,11 +365,7 @@ class RepoMap:
         return output
 
 
-def get_random_color():
-    hue = random.random()
-    r, g, b = [int(x * 255) for x in colorsys.hsv_to_rgb(hue, 1, 0.75)]
-    res = f"#{r:02x}{g:02x}{b:02x}"
-    return res
+
 
 
 def get_scm_fname(lang):
@@ -454,24 +379,7 @@ def get_scm_fname(lang):
     return None
 
 
-def get_supported_languages_md():
-    from grep_ast.parsers import PARSERS
 
-    res = """
-| Language | File extension | Repo map | Linter |
-|:--------:|:--------------:|:--------:|:------:|
-"""
-    data = sorted((lang, ex) for ex, lang in PARSERS.items())
-
-    for lang, ext in data:
-        fn = get_scm_fname(lang)
-        repo_map = "✓" if Path(fn).exists() else ""
-        linter_support = "✓"
-        res += f"| {lang:20} | {ext:20} | {repo_map:^8} | {linter_support:^6} |\n"
-
-    res += "\n"
-
-    return res
 
 def parse_dir(directory):
     if not os.path.isdir(directory):
