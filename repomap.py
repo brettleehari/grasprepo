@@ -1,3 +1,4 @@
+import argparse
 import colorsys
 import math
 import os
@@ -126,7 +127,7 @@ class RepoMap:
                 line=-1,
             )
 
-    def get_ranked_tags(self, list_of_files):
+    def get_ranked_tags(self, list_of_files, find_file):
         import networkx as nx
         from pyvis.network import Network
 
@@ -282,15 +283,19 @@ class RepoMap:
         #print(top_rank)
 
         # Check if the key exists in the ranked dictionary
-        file_path = 'request/tests/server.js'
+        print("############ranked dictionary######################")
+        #print(ranked)
+        #file_path = 'requests/src/requests/models.py'
+        file_path = find_file[0]
         if file_path in ranked:
+            print(f"Key '{file_path}' found in ranked dictionary")
             # Find rank of a file
             print(f" The rank of the file: {file_path} is {ranked[file_path]}")
             # Find relative rank of the file in the list
             #print the rank of the file in the list among the total number of files in the list
             relative_rank = (top_rank.index((ranked[file_path], file_path)))
             Total_files = len(top_rank)
-            print(f"Relative rank of the file in the list: {relative_rank} out of {Total_files}")
+            print(f"Relative rank of the file in the list: {relative_rank+1} out of {Total_files}")
             #what are the top 3 ranked files
             top_3_files = top_rank[:3]
             #print the top 3 ranked files and its rank
@@ -416,18 +421,37 @@ def parse_dir(directory):
 
 
 
-def main():
-
-    unpacked = parse_dir(sys.argv[1])
-
+def main(repo_path, file_names):
+    unpacked = parse_dir(repo_path)
+    print(f"Unpacked files: {unpacked}")
+    print(f"Number of files: {len(unpacked)}")
+    if file_names:
+        for file_name in file_names:
+            file_exists = [f for f in unpacked if file_name in f]
+            if not file_exists:
+                print(f"File {file_name} not found in the repo")
+                import sys
+                sys.exit(1)
+            else:
+                print(f"File {file_name} found in the repo")
+    #unpacked = filter_important_files(unpacked, file_name)
 
     rm = RepoMap()
-    rank_tags = rm.get_ranked_tags(unpacked)
+    rank_tags = rm.get_ranked_tags(unpacked, file_names)
     #import pdb; pdb.set_trace()
     repo_tree = rm.to_tree(rank_tags)
     #print(repo_tree)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Generate a repo map")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("-d", "--debug", action="store_true", help="Enable debug output")
+    parser.add_argument("-r", "--repo_path", required=True, help="Path to the repository")
+    parser.add_argument("-l", "--list_files", nargs='*', help="List of files to process")
 
-
+    args = parser.parse_args()
+    repo_path = args.repo_path
+    list_files = args.list_files
+    print(f"Repo path: {repo_path}")
+    print(f"File name: {list_files}")
+    main(repo_path, list_files)
