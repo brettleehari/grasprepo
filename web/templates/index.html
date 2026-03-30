@@ -1,0 +1,551 @@
+{% extends "base.html" %}
+{% set active = "home" %}
+{% block title %}grasprepo - See What Coding Agents See{% endblock %}
+
+{% block content %}
+<!-- Hero + Story -->
+<div class="hero">
+    <h1>grasp<span>repo</span></h1>
+    <p>See what coding agents see when they look at your codebase.</p>
+
+    <form id="analyze-form" onsubmit="return startAnalysis(event)">
+        <div class="url-input-row">
+            <input type="url" id="repo-url" placeholder="https://github.com/owner/repo" required autocomplete="url">
+            <button type="submit" class="primary" id="run-btn">Analyze</button>
+        </div>
+    </form>
+</div>
+
+<!-- How it works — shown before analysis -->
+<div id="explainer">
+    <h2 style="text-align:center;margin-bottom:24px;">What happens under the hood of coding agents?</h2>
+    <p style="text-align:center;color:var(--text-muted);max-width:720px;margin:0 auto 32px;">
+        Every modern coding assistant — Cursor, Aider, Claude Code, Copilot — needs to understand your entire codebase before it can help you.
+        But how? They can't just read every file. Here's the pipeline they run behind the scenes, and exactly what grasprepo shows you:
+    </p>
+
+    <div class="pipeline-steps">
+        <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+                <h3>Parse the AST</h3>
+                <p>Every source file is parsed into an <strong>Abstract Syntax Tree</strong> using Tree-sitter — the same parser that powers VS Code, Neovim, and GitHub's code search. This extracts every class, function, method, and variable definition — the structural skeleton of your code.</p>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+                <h3>Build the Dependency Graph</h3>
+                <p>For every symbol <em>defined</em> in one file and <em>referenced</em> in another, an edge is drawn. This produces a directed graph where files point to the files they depend on. The result is a map of how information flows through your codebase.</p>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+                <h3>Rank by Importance (PageRank)</h3>
+                <p>The same algorithm Google uses to rank web pages is applied to your dependency graph. Files that are heavily referenced by other important files rise to the top. This tells the agent which files matter most — and which to include in its context window.</p>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+                <h3>Measure Code Churn</h3>
+                <p>Git history reveals which files change most often, who changes them, and how much. High churn signals active development, instability, or tech debt. Agents use this to understand what's "hot" in the codebase right now.</p>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-num">5</div>
+            <div class="step-content">
+                <h3>Surface Hotspots</h3>
+                <p>The most dangerous code lives at the intersection: files that are <strong>both</strong> highly connected (many things depend on them) <strong>and</strong> frequently changing. These are your highest-risk files — where bugs have the biggest blast radius.</p>
+            </div>
+        </div>
+    </div>
+
+    <div style="text-align:center;margin:32px 0 0;">
+        <p style="color:var(--text-muted);font-size:15px;">This project started from curiosity — wanting to understand what coding assistants actually do with your repo. It turned into a tool that lets anyone learn about any codebase.</p>
+    </div>
+</div>
+
+<!-- Loading -->
+<div id="loading" class="loading-section" style="display:none;">
+    <div class="spinner-lg"></div>
+    <p id="loading-stage" class="loading-text">Validating repository URL...</p>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+</div>
+
+<!-- Error -->
+<div id="error" class="status error" style="display:none;"></div>
+
+<!-- Results -->
+<div id="results" style="display:none;">
+    <div class="repo-info-card" id="repo-info"></div>
+
+    <div class="section-tabs">
+        <button class="tab active" data-tab="ranked" onclick="switchTab('ranked', this)">Ranked Files</button>
+        <button class="tab" data-tab="churn" onclick="switchTab('churn', this)">Churn Metrics</button>
+        <button class="tab" data-tab="hotspots" onclick="switchTab('hotspots', this)">Hotspots</button>
+        <button class="tab" data-tab="ast" onclick="switchTab('ast', this)">AST Explorer</button>
+        <button class="tab" data-tab="graph" onclick="switchTab('graph', this)">Dependency Graph</button>
+    </div>
+
+    <!-- Tab: Ranked Files -->
+    <div class="tab-panel active" id="panel-ranked">
+        <div class="table-wrap">
+            <table id="ranked-table">
+                <thead><tr><th>Rank</th><th>File</th><th>PageRank Score</th><th>Centrality</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tab: Churn -->
+    <div class="tab-panel" id="panel-churn">
+        <div id="churn-warning" style="display:none;" class="status"></div>
+        <div class="table-wrap">
+            <table id="churn-table">
+                <thead><tr><th>#</th><th>File</th><th>Commits</th><th>Total Churn</th><th>Lines Added</th><th>Lines Removed</th><th>Contributors</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <h3 style="margin:24px 0 12px;">Churn Distribution</h3>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;">
+            <canvas id="churn-chart"></canvas>
+        </div>
+    </div>
+
+    <!-- Tab: Hotspots -->
+    <div class="tab-panel" id="panel-hotspots">
+        <p style="color:var(--text-muted);margin-bottom:12px;">Files that are both highly connected (PageRank) and frequently changed (churn) — your highest-risk code.</p>
+        <div id="hotspot-viz" style="margin-bottom:20px;">
+            <canvas id="hotspot-canvas"></canvas>
+        </div>
+        <div class="table-wrap">
+            <table id="hotspot-table">
+                <thead><tr><th>File</th><th>Hotspot Score</th><th>PageRank</th><th>Commits</th><th>Total Churn</th><th>Centrality</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tab: AST Explorer -->
+    <div class="tab-panel" id="panel-ast">
+        <p style="color:var(--text-muted);margin-bottom:4px;">The Abstract Syntax Tree — every symbol Tree-sitter extracted from this codebase. This is what coding agents "see" when they parse your code.</p>
+        <div style="margin-bottom:12px;display:flex;gap:12px;align-items:center;">
+            <input type="text" id="ast-search" placeholder="Search symbols..." style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:14px;width:280px;">
+            <span id="ast-stats" style="font-size:13px;color:var(--text-muted);"></span>
+        </div>
+        <div id="ast-tree" class="ast-tree"></div>
+    </div>
+
+    <!-- Tab: Graph -->
+    <div class="tab-panel" id="panel-graph">
+        <div style="margin-bottom:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+            <label style="font-size:13px;color:var(--text-muted);">Show top
+                <select id="graph-limit" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 8px;margin:0 4px;">
+                    <option value="20">20</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                    <option value="0">All</option>
+                </select> nodes
+            </label>
+            <button class="primary" style="padding:6px 14px;font-size:13px;" onclick="drawGraph(window._graphData)">Refresh</button>
+            <span style="font-size:12px;color:var(--text-muted);">Drag nodes to rearrange. Scroll to zoom. Click a node to highlight connections.</span>
+        </div>
+        <div id="graph-container" style="height:600px;"></div>
+    </div>
+
+    <!-- Download -->
+    <div style="text-align:center;margin:32px 0;">
+        <button class="primary download-btn" onclick="showDownloadModal()">Download Full Report (CSV)</button>
+    </div>
+</div>
+
+<!-- Download modal -->
+<div id="download-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+        <h2>Download Report</h2>
+        <p style="color:var(--text-muted);margin:8px 0 20px;">Enter your email or LinkedIn profile to download the full analysis as CSV.</p>
+        <form id="download-form" onsubmit="return submitDownload(event)">
+            <div class="modal-field">
+                <label>Email address</label>
+                <input type="email" id="dl-email" placeholder="you@company.com">
+            </div>
+            <div class="modal-divider"><span>or</span></div>
+            <div class="modal-field">
+                <label>LinkedIn profile URL</label>
+                <input type="url" id="dl-linkedin" placeholder="https://linkedin.com/in/yourprofile">
+            </div>
+            <div id="dl-error" class="modal-error" style="display:none;"></div>
+            <div class="modal-actions">
+                <button type="button" class="modal-cancel" onclick="closeModal()">Cancel</button>
+                <button type="submit" class="primary" id="dl-btn">Download CSV</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ---- Loading stages ---- */
+const stages = [
+    "Cloning repository...",
+    "Parsing AST with Tree-sitter...",
+    "Extracting symbols & references...",
+    "Building dependency graph...",
+    "Running PageRank analysis...",
+    "Computing code churn metrics...",
+    "Detecting hotspots...",
+    "Almost there..."
+];
+let stageIdx = 0, stageTimer = null;
+
+function advanceStage() {
+    if (stageIdx < stages.length) {
+        document.getElementById('loading-stage').textContent = stages[stageIdx];
+        document.getElementById('progress-fill').style.width = Math.min(((stageIdx+1)/stages.length)*100, 95) + '%';
+        stageIdx++;
+    }
+}
+
+/* ---- Main flow ---- */
+async function startAnalysis(e) {
+    e.preventDefault();
+    const url = document.getElementById('repo-url').value.trim();
+    const btn = document.getElementById('run-btn');
+    const loading = document.getElementById('loading');
+    const error = document.getElementById('error');
+    const results = document.getElementById('results');
+
+    btn.disabled = true;
+    results.style.display = 'none';
+    error.style.display = 'none';
+    document.getElementById('explainer').style.display = 'none';
+    loading.style.display = 'block';
+    stageIdx = 0; advanceStage();
+    stageTimer = setInterval(advanceStage, 5000);
+
+    try {
+        const resp = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({repo_url: url}),
+        });
+        clearInterval(stageTimer);
+        document.getElementById('progress-fill').style.width = '100%';
+        if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || 'Analysis failed'); }
+        const data = await resp.json();
+        renderResults(data);
+        loading.style.display = 'none';
+        results.style.display = 'block';
+    } catch (err) {
+        clearInterval(stageTimer);
+        loading.style.display = 'none';
+        error.style.display = 'block';
+        error.textContent = err.message;
+        document.getElementById('explainer').style.display = 'block';
+    } finally { btn.disabled = false; }
+}
+
+/* ---- Tabs ---- */
+function switchTab(name, el) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('panel-' + name).classList.add('active');
+    if (name === 'graph') drawGraph(window._graphData);
+    if (name === 'hotspots') drawHotspotViz(window._analysisData.hotspots);
+}
+
+/* ---- Render ---- */
+function renderResults(data) {
+    window._analysisData = data;
+    window._graphData = data.repomap.graph;
+
+    document.getElementById('repo-info').innerHTML = `
+        <div class="stats-row">
+            <div class="stat-box"><div class="label">Repository</div><div class="value" style="font-size:18px;">
+                <a href="${data.repo_url}" target="_blank">${data.repo_name}</a></div></div>
+            <div class="stat-box"><div class="label">Total Files</div><div class="value">${data.file_count}</div></div>
+            <div class="stat-box"><div class="label">In Dep Graph</div><div class="value">${data.repomap.analyzed_files}</div></div>
+            <div class="stat-box"><div class="label">Hotspots</div><div class="value">${data.hotspots.length}</div></div>
+            <div class="stat-box"><div class="label">Analysis Time</div><div class="value">${data.duration_seconds}s</div></div>
+        </div>`;
+
+    // Ranked files
+    if (data.repomap.ranked_files.length > 0) {
+        const maxPR = data.repomap.ranked_files[0].pagerank_score;
+        document.querySelector('#ranked-table tbody').innerHTML = data.repomap.ranked_files.map(f => {
+            const pct = (f.pagerank_score / maxPR * 100).toFixed(0);
+            return `<tr>
+                <td><span class="rank-badge">${f.rank_position}</span></td>
+                <td>${f.file}</td>
+                <td><div style="display:flex;align-items:center;gap:8px;">
+                    <div class="score-bar" style="width:120px;"><div class="fill" style="width:${pct}%"></div></div>
+                    <span>${f.pagerank_score.toFixed(6)}</span></div></td>
+                <td>${f.centrality.toFixed(4)}</td></tr>`;
+        }).join('');
+    } else {
+        document.querySelector('#ranked-table tbody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:24px;">No ranked files found.</td></tr>';
+    }
+
+    // Churn
+    const churn = data.churn;
+    const churnWarning = document.getElementById('churn-warning');
+    if (churn.warning) { churnWarning.style.display = 'block'; churnWarning.textContent = churn.warning; }
+    else if (!churn.top_files || churn.top_files.length === 0) {
+        churnWarning.style.display = 'block';
+        churnWarning.innerHTML = 'No commits found in the last 6 months (' + churn.period + ').';
+    } else { churnWarning.style.display = 'none'; }
+
+    if (churn.top_files && churn.top_files.length > 0) {
+        document.querySelector('#churn-table tbody').innerHTML = churn.top_files.map((f, i) =>
+            `<tr><td>${i+1}</td><td>${f.filename}</td><td>${f.commits}</td><td>${f.total_churn}</td>
+            <td style="color:var(--green);">+${f.lines_added}</td>
+            <td style="color:var(--red);">-${f.removed_lines}</td>
+            <td>${f.total_contributor}</td></tr>`).join('');
+    } else {
+        document.querySelector('#churn-table tbody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">No churn data available.</td></tr>';
+    }
+    drawChurnChart(churn.top_files ? churn.top_files.slice(0, 15) : []);
+
+    // Hotspots
+    renderHotspots(data.hotspots, churn);
+
+    // AST tree
+    renderAstTree(data.repomap.ast_tree || []);
+}
+
+/* ---- Hotspots ---- */
+function renderHotspots(hotspots, churn) {
+    if (hotspots.length === 0) {
+        document.querySelector('#hotspot-table tbody').innerHTML =
+            '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">' +
+            'No hotspots detected. ' +
+            (!churn.top_files || churn.top_files.length === 0
+                ? 'No churn data was found, so hotspots cannot be computed.'
+                : 'The high-rank and high-churn files did not overlap.') + '</td></tr>';
+        document.getElementById('hotspot-viz').style.display = 'none';
+    } else {
+        document.getElementById('hotspot-viz').style.display = 'block';
+        document.querySelector('#hotspot-table tbody').innerHTML = hotspots.map(h =>
+            `<tr class="hotspot-row">
+                <td>${h.file}</td>
+                <td><span class="hotspot-badge">${h.hotspot_score}</span></td>
+                <td>${h.pagerank_score.toFixed(6)}</td>
+                <td>${h.commits}</td>
+                <td>${h.total_churn}</td>
+                <td>${h.centrality.toFixed(4)}</td></tr>`).join('');
+    }
+}
+
+/* ---- Hotspot Bubble Chart ---- */
+function drawHotspotViz(hotspots) {
+    const canvas = document.getElementById('hotspot-canvas');
+    if (!hotspots || !hotspots.length) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width; canvas.height = 340;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const pad = 60;
+    const w = canvas.width - pad * 2, h = canvas.height - pad * 2;
+    const maxPR = Math.max(...hotspots.map(d => d.pagerank_score)) || 1;
+    const maxCommits = Math.max(...hotspots.map(d => d.commits)) || 1;
+    const maxChurn = Math.max(...hotspots.map(d => d.total_churn)) || 1;
+    const maxScore = Math.max(...hotspots.map(d => d.hotspot_score)) || 1;
+
+    // Axes
+    ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, pad + h); ctx.lineTo(pad + w, pad + h); ctx.stroke();
+    ctx.fillStyle = '#8b949e'; ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Commits (churn frequency)', pad + w/2, canvas.height - 8);
+    ctx.save(); ctx.translate(14, pad + h/2); ctx.rotate(-Math.PI/2);
+    ctx.fillText('PageRank (importance)', 0, 0); ctx.restore();
+
+    // Bubbles
+    hotspots.forEach(d => {
+        const x = pad + (d.commits / maxCommits) * w;
+        const y = pad + h - (d.pagerank_score / maxPR) * h;
+        const r = 8 + (d.total_churn / maxChurn) * 30;
+        const t = d.hotspot_score / maxScore;
+
+        // Color: green (low risk) -> yellow -> red (high risk)
+        const red = Math.round(248 * t + 63 * (1-t));
+        const green = Math.round(81 * t + 185 * (1-t));
+        const blue = Math.round(73 * t + 80 * (1-t));
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgb(${red},${green},${blue})`; ctx.fill();
+        ctx.strokeStyle = `rgba(${red},${green},${blue},0.9)`; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        // Label
+        const parts = d.file.split('/');
+        const lbl = parts.length > 1 ? parts.slice(-1)[0] : d.file;
+        ctx.fillStyle = '#c9d1d9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(lbl, x, y - r - 4);
+    });
+
+    // Legend
+    ctx.fillStyle = '#8b949e'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('Bubble size = total churn    Color = hotspot risk (green=low, red=high)', pad, pad - 10);
+}
+
+/* ---- AST Tree ---- */
+function renderAstTree(tree) {
+    const container = document.getElementById('ast-tree');
+    if (!tree || !tree.length) {
+        container.innerHTML = '<p style="color:var(--text-muted);padding:24px;text-align:center;">No AST data available.</p>';
+        return;
+    }
+
+    // Count totals
+    let totalFiles = 0, totalSymbols = 0;
+    function countAll(nodes) {
+        nodes.forEach(n => {
+            if (n.type === 'file') { totalFiles++; totalSymbols += (n.symbols || []).length; }
+            else if (n.children) countAll(n.children);
+        });
+    }
+    countAll(tree);
+    document.getElementById('ast-stats').textContent = `${totalFiles} files, ${totalSymbols} symbols extracted`;
+
+    container.innerHTML = buildTreeHtml(tree, 0);
+
+    // Search filter
+    document.getElementById('ast-search').addEventListener('input', function() {
+        const q = this.value.toLowerCase();
+        container.querySelectorAll('.ast-file, .ast-dir').forEach(el => {
+            const text = el.textContent.toLowerCase();
+            el.style.display = (!q || text.includes(q)) ? '' : 'none';
+        });
+    });
+}
+
+function buildTreeHtml(nodes, depth) {
+    let html = '';
+    for (const n of nodes) {
+        if (n.type === 'dir') {
+            const symCount = n.symbol_count || 0;
+            html += `<details class="ast-dir" ${depth < 1 ? 'open' : ''}>
+                <summary class="ast-node ast-dir-name">
+                    <span class="ast-icon">&#128193;</span> ${n.name}
+                    <span class="ast-count">${symCount} symbols</span>
+                </summary>
+                <div class="ast-children">${buildTreeHtml(n.children || [], depth + 1)}</div>
+            </details>`;
+        } else {
+            const syms = n.symbols || [];
+            if (!syms.length) continue;
+            html += `<details class="ast-file">
+                <summary class="ast-node ast-file-name">
+                    <span class="ast-icon">&#128196;</span> ${n.name}
+                    <span class="ast-count">${syms.length}</span>
+                </summary>
+                <div class="ast-children ast-symbols">
+                    ${syms.map(s => `<div class="ast-symbol"><span class="ast-sym-icon">&#9670;</span> <span class="ast-sym-name">${s.name}</span><span class="ast-sym-line">:${s.line}</span></div>`).join('')}
+                </div>
+            </details>`;
+        }
+    }
+    return html;
+}
+
+/* ---- Graph (vis-network) ---- */
+let visNetwork = null;
+function drawGraph(graph) {
+    const container = document.getElementById('graph-container');
+    if (!graph || !graph.nodes.length) {
+        container.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:60px;">No graph data to display.</p>';
+        return;
+    }
+    const limit = parseInt(document.getElementById('graph-limit').value) || 0;
+    let visibleNodes = [...graph.nodes].sort((a, b) => b.pagerank - a.pagerank);
+    if (limit > 0) visibleNodes = visibleNodes.slice(0, limit);
+    const visibleIds = new Set(visibleNodes.map(n => n.id));
+    const maxPR = Math.max(...visibleNodes.map(n => n.pagerank)) || 1;
+
+    function nodeColor(pr) {
+        const t = pr / maxPR;
+        return `rgb(${Math.round(88+t*160)},${Math.round(166-t*85)},${Math.round(255-t*182)})`;
+    }
+    function shortLabel(id) { const p = id.split('/'); return p.length > 2 ? p.slice(-2).join('/') : id; }
+
+    const nodes = new vis.DataSet(visibleNodes.map(n => ({
+        id: n.id, label: shortLabel(n.id),
+        title: `${n.id}\nPageRank: ${n.pagerank.toFixed(6)}\nCentrality: ${n.centrality.toFixed(4)}`,
+        size: 8 + (n.pagerank / maxPR) * 32,
+        color: { background: nodeColor(n.pagerank), border: nodeColor(n.pagerank), highlight: { background: '#f0f6fc', border: '#58a6ff' } },
+        font: { color: '#c9d1d9', size: 11 },
+    })));
+
+    const edgeMap = {};
+    graph.edges.forEach(e => {
+        if (!visibleIds.has(e.source) || !visibleIds.has(e.target) || e.source === e.target) return;
+        const key = e.source + '\u2192' + e.target;
+        if (!edgeMap[key]) edgeMap[key] = { from: e.source, to: e.target, weight: 0, idents: [] };
+        edgeMap[key].weight += e.weight;
+        if (edgeMap[key].idents.length < 5) edgeMap[key].idents.push(e.ident);
+    });
+    const maxW = Math.max(...Object.values(edgeMap).map(e => e.weight), 1);
+    const edges = new vis.DataSet(Object.values(edgeMap).map(e => ({
+        from: e.from, to: e.to, width: 0.5 + (e.weight / maxW) * 3,
+        color: { color: 'rgba(88,166,255,0.25)', highlight: '#58a6ff' },
+        title: e.idents.join(', '), arrows: { to: { enabled: true, scaleFactor: 0.4 } }, smooth: { type: 'continuous' },
+    })));
+
+    if (visNetwork) { visNetwork.destroy(); visNetwork = null; }
+    visNetwork = new vis.Network(container, { nodes, edges }, {
+        physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -40, centralGravity: 0.005, springLength: 150, springConstant: 0.02, damping: 0.4 }, stabilization: { iterations: 200, fit: true } },
+        interaction: { hover: true, tooltipDelay: 100, dragNodes: true, dragView: true, zoomView: true, navigationButtons: true },
+        nodes: { shape: 'dot', borderWidth: 1, shadow: { enabled: true, color: 'rgba(0,0,0,0.3)', size: 6 } },
+        edges: { selectionWidth: 2 }, layout: { improvedLayout: true },
+    });
+    visNetwork.on('click', function(params) {
+        if (params.nodes.length > 0) {
+            const id = params.nodes[0], conn = visNetwork.getConnectedNodes(id);
+            nodes.get().forEach(n => nodes.update({ id: n.id, opacity: (n.id === id || conn.includes(n.id)) ? 1.0 : 0.15 }));
+        } else { nodes.get().forEach(n => nodes.update({ id: n.id, opacity: 1.0 })); }
+    });
+}
+
+/* ---- Download modal ---- */
+function showDownloadModal() { document.getElementById('dl-email').value = ''; document.getElementById('dl-linkedin').value = ''; document.getElementById('dl-error').style.display = 'none'; document.getElementById('download-modal').style.display = 'flex'; }
+function closeModal() { document.getElementById('download-modal').style.display = 'none'; }
+async function submitDownload(e) {
+    e.preventDefault();
+    const email = document.getElementById('dl-email').value.trim(), linkedin = document.getElementById('dl-linkedin').value.trim(), errEl = document.getElementById('dl-error');
+    if (!email && !linkedin) { errEl.textContent = 'Please provide either an email address or a LinkedIn profile URL.'; errEl.style.display = 'block'; return; }
+    errEl.style.display = 'none';
+    const data = window._analysisData;
+    try {
+        const resp = await fetch('/api/download', { method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ email: email||null, linkedin: linkedin||null, repo_url: data.repo_url, repo_name: data.repo_name, ranked_files: data.repomap.ranked_files, churn_files: data.churn.top_files||[], hotspots: data.hotspots }) });
+        if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || 'Download failed'); }
+        const blob = await resp.blob(), url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = url; a.download = `grasprepo-${data.repo_name}-report.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); closeModal();
+    } catch (err) { errEl.textContent = err.message; errEl.style.display = 'block'; }
+}
+
+/* ---- Churn chart ---- */
+function drawChurnChart(files) {
+    const canvas = document.getElementById('churn-chart'), ctx = canvas.getContext('2d');
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width - 32; canvas.height = Math.max(300, files.length * 28 + 40);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!files.length) return;
+    const maxC = Math.max(...files.map(f => f.total_churn), 1), barH = 20, gap = 8, labelW = 200, chartW = canvas.width - labelW - 60;
+    files.forEach((f, i) => {
+        const y = 20 + i * (barH + gap), lbl = f.filename.length > 30 ? '...' + f.filename.slice(-27) : f.filename;
+        ctx.fillStyle = '#8b949e'; ctx.font = '12px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.fillText(lbl, labelW - 8, y + barH/2);
+        const w = (f.total_churn / maxC) * chartW;
+        ctx.fillStyle = '#58a6ff'; ctx.fillRect(labelW, y, w, barH);
+        ctx.fillStyle = '#c9d1d9'; ctx.textAlign = 'left'; ctx.fillText(f.total_churn, labelW + w + 6, y + barH/2);
+    });
+}
+</script>
+{% endblock %}

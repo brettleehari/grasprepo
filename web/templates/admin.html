@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% set active = "admin" %}
+{% block title %}Internal Analytics - grasprepo{% endblock %}
+
+{% block content %}
+<h1 style="margin-top:32px;">Internal Analytics</h1>
+<p style="color:var(--text-muted);margin-bottom:16px;">Who we've served — not public.</p>
+
+<div class="stats-row" id="stats-row">
+    <div class="stat-box"><div class="label">Total Analyses</div><div class="value" id="stat-total">-</div></div>
+    <div class="stat-box"><div class="label">Unique Repos</div><div class="value" id="stat-unique">-</div></div>
+    <div class="stat-box"><div class="label">Leads Captured</div><div class="value" id="stat-leads">-</div></div>
+</div>
+
+<div style="margin:20px 0;display:flex;gap:12px;">
+    <a href="/api/internal/export/analyses" class="primary" style="padding:8px 16px;font-size:13px;border-radius:6px;text-decoration:none;display:inline-block;">Export Analyses CSV</a>
+    <a href="/api/internal/export/leads" class="primary" style="padding:8px 16px;font-size:13px;border-radius:6px;text-decoration:none;display:inline-block;background:var(--green);">Export Leads CSV</a>
+</div>
+
+<h2 style="margin:24px 0 12px;">Leads</h2>
+<div class="table-wrap">
+    <table id="leads-table">
+        <thead><tr><th>Time</th><th>Email</th><th>LinkedIn</th><th>Repository</th><th>IP</th></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<h2 style="margin:24px 0 12px;">Most Analyzed Repos</h2>
+<div class="table-wrap">
+    <table id="popular-table">
+        <thead><tr><th>Repository</th><th>Times Analyzed</th><th>Last Analyzed</th></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<h2 style="margin:24px 0 12px;">All Analyses</h2>
+<div class="table-wrap">
+    <table id="recent-table" style="font-size:12px;">
+        <thead><tr>
+            <th>Time</th><th>Repository</th><th>Files</th><th>Ranked</th><th>Churned</th>
+            <th>Hotspots</th><th>Top Hotspot</th><th>Graph Nodes</th><th>Graph Edges</th>
+            <th>AST Symbols</th><th>Max Contributors</th><th>Duration</th><th>IP</th>
+        </tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function() {
+    const resp = await fetch('/api/internal/analytics');
+    const data = await resp.json();
+
+    document.getElementById('stat-total').textContent = data.total_analyses;
+    document.getElementById('stat-unique').textContent = data.unique_repos;
+    document.getElementById('stat-leads').textContent = data.total_leads;
+
+    document.querySelector('#leads-table tbody').innerHTML = (data.leads || []).map(l =>
+        `<tr><td>${l.timestamp}</td>
+             <td>${l.email || '-'}</td>
+             <td>${l.linkedin ? '<a href="' + l.linkedin + '" target="_blank">' + l.linkedin + '</a>' : '-'}</td>
+             <td><a href="${l.repo_url}" target="_blank">${l.repo_name}</a></td>
+             <td>${l.ip_address || '-'}</td></tr>`
+    ).join('') || '<tr><td colspan="5" style="color:var(--text-muted);text-align:center;">No leads yet.</td></tr>';
+
+    document.querySelector('#popular-table tbody').innerHTML = data.popular.map(r =>
+        `<tr><td><a href="${r.repo_url}" target="_blank">${r.repo_name}</a></td>
+             <td>${r.analysis_count}</td><td>${r.last_analyzed}</td></tr>`
+    ).join('') || '<tr><td colspan="3" style="color:var(--text-muted);text-align:center;">No data yet.</td></tr>';
+
+    document.querySelector('#recent-table tbody').innerHTML = data.recent.map(r =>
+        `<tr><td style="white-space:nowrap;">${r.timestamp}</td>
+             <td><a href="${r.repo_url}" target="_blank">${r.repo_name}</a></td>
+             <td>${r.file_count}</td>
+             <td>${r.ranked_files_count}</td>
+             <td>${r.churn_files_count}</td>
+             <td>${r.hotspot_count}</td>
+             <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.top_hotspot_file || '-'}</td>
+             <td>${r.graph_nodes || '-'}</td>
+             <td>${r.graph_edges || '-'}</td>
+             <td>${r.ast_symbol_count || '-'}</td>
+             <td>${r.churn_total_contributors || '-'}</td>
+             <td>${r.duration_seconds}s</td>
+             <td>${r.ip_address || '-'}</td></tr>`
+    ).join('') || '<tr><td colspan="13" style="color:var(--text-muted);text-align:center;">No data yet.</td></tr>';
+})();
+</script>
+{% endblock %}
