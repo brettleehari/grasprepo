@@ -13,8 +13,13 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Make sure parent dir is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Make sure parent dir is importable (for repomap.py -> utils.py import chain)
+_PARENT_DIR = str(Path(__file__).resolve().parent.parent)
+if _PARENT_DIR not in sys.path:
+    sys.path.insert(0, _PARENT_DIR)
+
+# Also ensure cwd-based imports work (repomap.py does `from utils import ...`)
+os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 
 from repomap import RepoMap, parse_dir
 

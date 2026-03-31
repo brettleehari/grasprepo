@@ -5,12 +5,18 @@ Internal analytics tracked in SQLite.
 """
 
 import asyncio
+import csv
+import io
+import os
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import csv
-import io
+# Ensure the project root is on sys.path so repomap.py can find utils.py
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
