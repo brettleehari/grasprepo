@@ -3,11 +3,10 @@
 {% block title %}grasprepo - See What Coding Agents See{% endblock %}
 
 {% block content %}
-<!-- Hero + Story -->
-<div class="hero">
+<!-- Compact hero -->
+<div class="hero-compact">
     <h1>grasp<span>repo</span></h1>
-    <p>See what coding agents see when they look at your codebase.</p>
-
+    <p class="hero-sub">See what coding agents see when they look at your codebase.</p>
     <form id="analyze-form" onsubmit="return startAnalysis(event)">
         <div class="url-input-row">
             <input type="url" id="repo-url" placeholder="https://github.com/owner/repo" required autocomplete="url">
@@ -16,68 +15,46 @@
     </form>
 </div>
 
-<!-- How it works — shown before analysis -->
+<!-- Everything visible without scrolling -->
 <div id="explainer">
-    <!-- Author card (top) -->
-    <div class="author-card" style="margin-bottom:36px;">
-        <div class="author-text">
-            <p>In 2023, when Applied AI products were in their initial stages, I had more questions than answers. Those questions drove me to create my own coding assistant. The main engine for most code assistants is to understand the repo, its relationships, and pull the right files during runtime to create context. Part of that exploration became grasprepo: a tool that lets anyone see under the hood for their repo.</p>
-            <div class="author-meta">
-                <strong>Hari Prasad Sudharsan</strong>
-                <div class="author-links">
-                    <a href="https://linkedin.com/in/haripm4ai" target="_blank">LinkedIn</a>
-                    <a href="https://github.com/brettleehari" target="_blank">GitHub</a>
-                    <a href="https://medium.com/@brettleehari/how-will-you-design-a-code-assist-8cbc085a08cd" target="_blank">Medium</a>
-                    <a href="https://brettleehari.github.io/aboutme/" target="_blank">About Me</a>
-                </div>
-            </div>
+    <!-- Author + context -->
+    <div class="author-inline">
+        <p>In 2023, when Applied AI products were in their initial stages, I had more questions than answers. Those questions drove me to create my own coding assistant. The main engine for most code assistants is to understand the repo, its relationships, and pull the right files during runtime to create context. Part of that exploration became grasprepo: a tool that lets anyone see under the hood for their repo.</p>
+        <div class="author-meta">
+            <strong>Hari Prasad Sudharsan</strong>
+            <span class="author-links">
+                <a href="https://linkedin.com/in/haripm4ai" target="_blank">LinkedIn</a>
+                <a href="https://github.com/brettleehari" target="_blank">GitHub</a>
+                <a href="https://medium.com/@brettleehari/how-will-you-design-a-code-assist-8cbc085a08cd" target="_blank">Medium</a>
+                <a href="https://brettleehari.github.io/aboutme/" target="_blank">About Me</a>
+            </span>
         </div>
     </div>
 
-    <h2 style="text-align:center;margin-bottom:24px;">What happens under the hood of coding agents?</h2>
-    <p style="text-align:center;color:var(--text-muted);max-width:720px;margin:0 auto 32px;">
-        Every modern coding assistant — Cursor, Aider, Claude Code, Copilot — needs to understand your entire codebase before it can help you.
-        But how? They can't just read every file. Here's the pipeline they run behind the scenes, and exactly what grasprepo shows you:
-    </p>
-
-    <div class="pipeline-steps">
-        <div class="step">
-            <div class="step-num">1</div>
-            <div class="step-content">
-                <h3>Parse the AST</h3>
-                <p>Every source file is parsed into an <strong>Abstract Syntax Tree</strong> using Tree-sitter — the same parser that powers VS Code, Neovim, and GitHub's code search. This extracts every class, function, method, and variable definition — the structural skeleton of your code.</p>
-            </div>
+    <!-- Pipeline grid -->
+    <h3 style="text-align:center;margin:14px 0 10px;font-size:15px;">What happens under the hood of coding agents?</h3>
+    <div class="pipeline-grid">
+        <div class="pipe-card">
+            <div class="pipe-num">1</div>
+            <div><strong>Parse the AST</strong><br>Tree-sitter extracts every class, function and variable definition from source files. The structural skeleton of your code.</div>
         </div>
-        <div class="step">
-            <div class="step-num">2</div>
-            <div class="step-content">
-                <h3>Build the Dependency Graph</h3>
-                <p>For every symbol <em>defined</em> in one file and <em>referenced</em> in another, an edge is drawn. This produces a directed graph where files point to the files they depend on. The result is a map of how information flows through your codebase.</p>
-            </div>
+        <div class="pipe-card">
+            <div class="pipe-num">2</div>
+            <div><strong>Dependency Graph</strong><br>Symbols defined in one file and referenced in another create edges. A directed graph showing how information flows through the codebase.</div>
         </div>
-        <div class="step">
-            <div class="step-num">3</div>
-            <div class="step-content">
-                <h3>Rank by Importance (PageRank)</h3>
-                <p>The same algorithm Google uses to rank web pages is applied to your dependency graph. Files that are heavily referenced by other important files rise to the top. This tells the agent which files matter most — and which to include in its context window.</p>
-            </div>
+        <div class="pipe-card">
+            <div class="pipe-num">3</div>
+            <div><strong>PageRank</strong><br>The same algorithm Google uses for web pages, applied to your dependency graph. Files referenced by other important files rise to the top.</div>
         </div>
-        <div class="step">
-            <div class="step-num">4</div>
-            <div class="step-content">
-                <h3>Measure Code Churn</h3>
-                <p>findchurn analyzes version control history. Point it at a repository with a time window and it tells you: how many commits, how many contributors, how much code was added and removed. A file with <strong>200 commits in three months by eight different developers</strong> is structurally different from a file with <strong>five stable commits by one developer</strong>. findchurn makes the difference visible.</p>
-            </div>
+        <div class="pipe-card">
+            <div class="pipe-num">4</div>
+            <div><strong>Code Churn</strong><br>How many commits, contributors, lines added and removed. A file with <strong>200 commits by 8 developers</strong> is structurally different from <strong>5 commits by 1 developer</strong>.</div>
         </div>
-        <div class="step">
-            <div class="step-num">5</div>
-            <div class="step-content">
-                <h3>The Prioritization Matrix</h3>
-                <p>When you combine churn data with structural importance, you get a risk-weighted prioritization across four quadrants. <strong>High churn + high PageRank</strong>: highest risk, handle with care. <strong>High churn + low PageRank</strong>: fragile but isolated, refactor freely. <strong>Low churn + high PageRank</strong>: stable and central, leave it alone. <strong>Low churn + low PageRank</strong>: safe territory, good for new team members. Each quadrant tells you something specific about where to spend your time.</p>
-            </div>
+        <div class="pipe-card pipe-card-wide">
+            <div class="pipe-num">5</div>
+            <div><strong>Prioritization Matrix</strong><br>Churn + importance = four quadrants. High churn + high rank: highest risk. High churn + low rank: isolated, refactor freely. Low churn + high rank: stable, leave alone. Low churn + low rank: safe territory.</div>
         </div>
     </div>
-
 </div>
 
 <!-- Loading -->
@@ -152,7 +129,7 @@
 
     <!-- Tab: AST Explorer -->
     <div class="tab-panel" id="panel-ast">
-        <p style="color:var(--text-muted);margin-bottom:4px;">The Abstract Syntax Tree — every symbol Tree-sitter extracted from this codebase. This is what coding agents "see" when they parse your code.</p>
+        <p style="color:var(--text-muted);margin-bottom:4px;">The Abstract Syntax Tree: every symbol Tree-sitter extracted from this codebase. This is what coding agents "see" when they parse your code.</p>
         <div style="margin-bottom:12px;display:flex;gap:12px;align-items:center;">
             <input type="text" id="ast-search" placeholder="Search symbols..." style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:14px;width:280px;">
             <span id="ast-stats" style="font-size:13px;color:var(--text-muted);"></span>
