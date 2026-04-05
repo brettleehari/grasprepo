@@ -386,45 +386,40 @@ tr.highlight td:first-child .rank-badge { background: var(--green); }
 }
 .modal-cancel:hover { color: var(--text); border-color: var(--text-muted); }
 
-/* CTA bar */
-.cta-bar {
-    text-align: center;
-    margin: 28px 0 36px;
-    padding: 20px 24px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-}
-.cta-bar p {
-    color: var(--text-muted);
-    font-size: 14px;
-    margin-bottom: 14px;
-}
-.cta-buttons {
+/* Floating CTA — always visible top-right */
+.floating-cta {
+    position: fixed;
+    top: 60px;
+    right: 16px;
+    z-index: 150;
     display: flex;
-    gap: 12px;
-    justify-content: center;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 6px;
 }
-.cta-btn {
+.fcta-btn {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 18px;
+    gap: 6px;
+    padding: 7px 14px;
     border-radius: 6px;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     text-decoration: none;
-    transition: opacity 0.2s;
+    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    white-space: nowrap;
 }
-.cta-btn:hover { opacity: 0.85; text-decoration: none; }
-.cta-github {
-    background: #238636;
-    color: #fff;
+.fcta-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    text-decoration: none;
 }
-.cta-medium {
-    background: #fff;
-    color: #000;
+.fcta-github { background: #238636; color: #fff; }
+.fcta-medium { background: #fff; color: #000; }
+
+@media (max-width: 640px) {
+    .floating-cta { top: auto; bottom: 12px; right: 12px; }
+    .fcta-btn { font-size: 12px; padding: 6px 10px; }
 }
 
 /* Pipeline steps (explainer) */
