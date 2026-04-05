@@ -36,23 +36,28 @@
     <div class="pipeline-grid">
         <div class="pipe-card">
             <div class="pipe-num">1</div>
-            <div><strong>Parse the AST</strong><br>Tree-sitter extracts every class, function and variable definition from source files. The structural skeleton of your code.</div>
+            <strong>Parse the AST</strong>
+            Tree-sitter extracts every class, function and variable definition. The structural skeleton of your code.
         </div>
         <div class="pipe-card">
             <div class="pipe-num">2</div>
-            <div><strong>Dependency Graph</strong><br>Symbols defined in one file and referenced in another create edges. A directed graph showing how information flows through the codebase.</div>
+            <strong>Dependency Graph</strong>
+            Symbols defined in one file and referenced in another create edges. A map of how information flows.
         </div>
         <div class="pipe-card">
             <div class="pipe-num">3</div>
-            <div><strong>PageRank</strong><br>The same algorithm Google uses for web pages, applied to your dependency graph. Files referenced by other important files rise to the top.</div>
+            <strong>PageRank</strong>
+            The same algorithm Google uses for web pages. Files referenced by other important files rise to the top.
         </div>
         <div class="pipe-card">
             <div class="pipe-num">4</div>
-            <div><strong>Code Churn</strong><br>How many commits, contributors, lines added and removed. A file with <strong>200 commits by 8 developers</strong> is structurally different from <strong>5 commits by 1 developer</strong>.</div>
+            <strong>Code Churn</strong>
+            Commits, contributors, lines changed. 200 commits by 8 developers looks different from 5 commits by 1.
         </div>
-        <div class="pipe-card pipe-card-wide">
+        <div class="pipe-card">
             <div class="pipe-num">5</div>
-            <div><strong>Prioritization Matrix</strong><br>Churn + importance = four quadrants. High churn + high rank: highest risk. High churn + low rank: isolated, refactor freely. Low churn + high rank: stable, leave alone. Low churn + low rank: safe territory.</div>
+            <strong>Prioritization Matrix</strong>
+            Four quadrants: highest risk, isolated, stable, safe. Each tells you where to spend your time.
         </div>
     </div>
 </div>

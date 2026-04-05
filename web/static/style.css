@@ -35,7 +35,7 @@ nav {
     top: 0;
     z-index: 100;
 }
-nav .container { display: flex; align-items: center; gap: 32px; }
+nav .container { display: flex; align-items: center; gap: 24px; }
 nav .brand { font-size: 18px; font-weight: 700; color: var(--text); }
 nav .brand span { color: var(--accent); }
 nav .links { display: flex; gap: 20px; }
@@ -395,87 +395,71 @@ tr.highlight td:first-child .rank-badge { background: var(--green); }
 }
 .modal-cancel:hover { color: var(--text); border-color: var(--text-muted); }
 
-/* Floating CTA — always visible top-right */
-.floating-cta {
-    position: fixed !important;
-    top: 14px !important;
-    right: 16px !important;
-    left: auto !important;
-    bottom: auto !important;
-    z-index: 9999 !important;
+/* Nav CTA buttons (top-right, always visible) */
+.nav-cta {
     display: flex;
     gap: 8px;
     align-items: center;
+    margin-left: auto;
 }
-.fcta-btn {
+.nav-cta-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 13px;
+    gap: 5px;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12px;
     font-weight: 700;
     text-decoration: none !important;
-    transition: transform 0.15s, box-shadow 0.15s;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
     white-space: nowrap;
-    letter-spacing: 0.2px;
+    transition: opacity 0.15s;
 }
-.fcta-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-    text-decoration: none !important;
-    color: inherit;
-}
-.fcta-github { background: #238636; color: #fff !important; }
-.fcta-medium { background: #fff; color: #000 !important; }
+.nav-cta-btn:hover { opacity: 0.85; text-decoration: none !important; }
+.nav-cta-github { background: #238636; color: #fff !important; }
+.nav-cta-medium { background: #fff; color: #000 !important; }
 
-@media (max-width: 640px) {
-    .floating-cta {
-        top: auto !important;
-        bottom: 16px !important;
-        right: 16px !important;
-        flex-direction: column;
-    }
+@media (max-width: 600px) {
+    .nav-cta-btn span { display: none; }
+    .nav-cta-btn { padding: 6px 8px; }
 }
 
-/* Pipeline grid (compact) */
+/* Pipeline boxes */
 .pipeline-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
     margin-bottom: 10px;
 }
 .pipe-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 10px 12px;
-    font-size: 11px;
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 12px;
     line-height: 1.5;
     color: var(--text-muted);
-    display: flex;
-    gap: 8px;
-    align-items: flex-start;
+    text-align: center;
+    transition: border-color 0.2s;
 }
-.pipe-card strong { color: var(--text); font-size: 12px; }
-.pipe-card-wide { grid-column: span 4; }
+.pipe-card:hover { border-color: var(--accent); }
+.pipe-card strong { color: var(--text); font-size: 13px; display: block; margin: 6px 0 4px; }
+.pipe-card-wide { grid-column: span 1; }
 .pipe-num {
-    flex-shrink: 0;
-    width: 22px; height: 22px;
+    width: 28px; height: 28px;
     background: var(--accent);
     color: #fff;
     border-radius: 50%;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
-    font-size: 11px;
-    margin-top: 1px;
+    font-size: 13px;
 }
-@media (max-width: 768px) {
+@media (max-width: 900px) {
+    .pipeline-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 600px) {
     .pipeline-grid { grid-template-columns: 1fr 1fr; }
-    .pipe-card-wide { grid-column: span 2; }
 }
 
 /* AST tree */
