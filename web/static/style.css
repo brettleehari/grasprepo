@@ -59,6 +59,32 @@ nav .links a:hover, nav .links a.active { color: var(--text); text-decoration: n
 .hero-compact h1 { font-size: 32px; margin-bottom: 4px; }
 .hero-compact h1 span { color: var(--accent); }
 .hero-sub { color: var(--text-muted); font-size: 15px; margin: 0 auto 14px; }
+.try-examples {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.try-examples button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
+.try-examples button:hover {
+    border-color: var(--accent);
+    background: rgba(88,166,255,0.08);
+}
 
 /* Cards grid */
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; padding-bottom: 60px; }

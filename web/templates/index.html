@@ -13,6 +13,14 @@
             <button type="submit" class="primary" id="run-btn">Analyze</button>
         </div>
     </form>
+    <div class="try-examples">
+        Try:
+        <button onclick="tryRepo('https://github.com/pallets/click')">pallets/click</button>
+        <button onclick="tryRepo('https://github.com/expressjs/express')">expressjs/express</button>
+        <button onclick="tryRepo('https://github.com/sanic-org/sanic')">sanic-org/sanic</button>
+        <button onclick="tryRepo('https://github.com/fastify/fastify')">fastify/fastify</button>
+        <button onclick="tryRepo('https://github.com/jqlang/jq')">jqlang/jq</button>
+    </div>
 </div>
 
 <!-- Everything visible without scrolling -->
@@ -211,6 +219,12 @@ function advanceStage() {
         document.getElementById('progress-fill').style.width = Math.min(((stageIdx+1)/stages.length)*100, 95) + '%';
         stageIdx++;
     }
+}
+
+/* ---- Try example repo ---- */
+function tryRepo(url) {
+    document.getElementById('repo-url').value = url;
+    document.getElementById('analyze-form').dispatchEvent(new Event('submit'));
 }
 
 /* ---- Main flow ---- */
