@@ -6,7 +6,9 @@ Internal analytics tracked in SQLite.
 
 import asyncio
 import csv
+import hashlib
 import io
+import json
 import os
 import sys
 import time
@@ -45,9 +47,37 @@ from web.repo_service import analyze_repo
 # App lifecycle
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Result cache (saves compute for example repos and repeat analyses)
+# ---------------------------------------------------------------------------
+
+CACHE_DIR = Path(__file__).parent / "data" / "cache"
+
+def _cache_key(repo_url: str) -> str:
+    return hashlib.sha256(repo_url.strip().rstrip("/").lower().encode()).hexdigest()[:16]
+
+def cache_get(repo_url: str) -> dict | None:
+    path = CACHE_DIR / f"{_cache_key(repo_url)}.json"
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return None
+    return None
+
+def cache_put(repo_url: str, data: dict):
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    path = CACHE_DIR / f"{_cache_key(repo_url)}.json"
+    try:
+        path.write_text(json.dumps(data))
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    os.makedirs(CACHE_DIR, exist_ok=True)
     yield
 
 
@@ -80,8 +110,37 @@ async def analytics_page(request: Request):
 @app.post("/api/analyze")
 async def api_analyze(body: AnalyzeRequest, request: Request):
     start = time.time()
+
+    # Check cache first
+    cached = cache_get(body.repo_url)
+    if cached:
+        cached["duration_seconds"] = 0
+        cached["cached"] = True
+        # Still record the analytics hit
+        try:
+            repomap = cached.get("repomap", {})
+            ranked = repomap.get("ranked_files", [])
+            churned = cached.get("churn", {}).get("top_files", [])
+            hotspots = cached.get("hotspots", [])
+            record_analysis(
+                repo_url=body.repo_url,
+                repo_name=cached.get("repo_name", ""),
+                ip_address=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent"),
+                file_count=cached.get("file_count", 0),
+                ranked_files_count=len(ranked),
+                churn_files_count=len(churned),
+                hotspot_count=len(hotspots),
+                top_ranked_file=ranked[0]["file"] if ranked else None,
+                top_churned_file=churned[0]["filename"] if churned else None,
+                top_hotspot_file=hotspots[0]["file"] if hotspots else None,
+                duration_seconds=0,
+            )
+        except Exception:
+            pass
+        return JSONResponse(cached)
+
     try:
-        # Run CPU-heavy work in a thread so the event loop stays free
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, analyze_repo, body.repo_url)
     except RuntimeError as e:
@@ -136,6 +195,10 @@ async def api_analyze(body: AnalyzeRequest, request: Request):
         pass  # analytics should never break user flow
 
     data["duration_seconds"] = duration
+
+    # Cache the result for future requests
+    cache_put(body.repo_url, data)
+
     return JSONResponse(data)
 
 
