@@ -72,8 +72,8 @@
         <div class="step">
             <div class="step-num">5</div>
             <div class="step-content">
-                <h3>Surface Hotspots</h3>
-                <p>The most dangerous code lives at the intersection: files that are <strong>both</strong> highly connected (many things depend on them) <strong>and</strong> frequently changing. These are your highest-risk files — where bugs have the biggest blast radius.</p>
+                <h3>The Prioritization Matrix</h3>
+                <p>When you combine churn data with structural importance, you get a risk-weighted prioritization across four quadrants. <strong>High churn + high PageRank</strong>: highest risk, handle with care. <strong>High churn + low PageRank</strong>: fragile but isolated, refactor freely. <strong>Low churn + high PageRank</strong>: stable and central, leave it alone. <strong>Low churn + low PageRank</strong>: safe territory, good for new team members. Each quadrant tells you something specific about where to spend your time.</p>
             </div>
         </div>
     </div>
@@ -97,7 +97,7 @@
     <div class="section-tabs">
         <button class="tab active" data-tab="ranked" onclick="switchTab('ranked', this)">Ranked Files</button>
         <button class="tab" data-tab="churn" onclick="switchTab('churn', this)">Churn Metrics</button>
-        <button class="tab" data-tab="hotspots" onclick="switchTab('hotspots', this)">Hotspots</button>
+        <button class="tab" data-tab="hotspots" onclick="switchTab('hotspots', this)">Prioritization Matrix</button>
         <button class="tab" data-tab="ast" onclick="switchTab('ast', this)">AST Explorer</button>
         <button class="tab" data-tab="graph" onclick="switchTab('graph', this)">Dependency Graph</button>
     </div>
@@ -128,12 +128,20 @@
         </div>
     </div>
 
-    <!-- Tab: Hotspots -->
+    <!-- Tab: Prioritization Matrix -->
     <div class="tab-panel" id="panel-hotspots">
-        <p style="color:var(--text-muted);margin-bottom:12px;">Files that are both highly connected (PageRank) and frequently changed (churn) — your highest-risk code.</p>
-        <div id="hotspot-viz" style="margin-bottom:20px;">
-            <canvas id="hotspot-canvas"></canvas>
+        <h3 style="margin-bottom:8px;">The Prioritization Matrix</h3>
+        <p style="color:var(--text-muted);margin-bottom:16px;">Combining churn data with structural importance gives you a risk-weighted prioritization across four quadrants:</p>
+        <div class="quadrant-legend">
+            <div class="q-item q-danger"><strong>High Churn + High Rank:</strong> Highest risk refactoring target. The file is both fragile and consequential. Handle with care.</div>
+            <div class="q-item q-warning"><strong>High Churn + Low Rank:</strong> Fragile but isolated. Refactor freely, the blast radius is small.</div>
+            <div class="q-item q-stable"><strong>Low Churn + High Rank:</strong> Stable and central. Leave it alone unless you have a strong reason.</div>
+            <div class="q-item q-safe"><strong>Low Churn + Low Rank:</strong> Safe territory. Good place for new team members to start.</div>
         </div>
+        <div id="matrix-viz" style="margin:20px 0;">
+            <canvas id="matrix-canvas"></canvas>
+        </div>
+        <h3 style="margin:24px 0 12px;">Hotspot Files (High Churn + High Rank)</h3>
         <div class="table-wrap">
             <table id="hotspot-table">
                 <thead><tr><th>File</th><th>Hotspot Score</th><th>PageRank</th><th>Commits</th><th>Total Churn</th><th>Centrality</th></tr></thead>
@@ -269,7 +277,7 @@ function switchTab(name, el) {
     el.classList.add('active');
     document.getElementById('panel-' + name).classList.add('active');
     if (name === 'graph') drawGraph(window._graphData);
-    if (name === 'hotspots') drawHotspotViz(window._analysisData.hotspots);
+    if (name === 'hotspots') drawPrioritizationMatrix(window._analysisData);
 }
 
 /* ---- Render ---- */
@@ -331,18 +339,16 @@ function renderResults(data) {
     renderAstTree(data.repomap.ast_tree || []);
 }
 
-/* ---- Hotspots ---- */
+/* ---- Prioritization Matrix ---- */
 function renderHotspots(hotspots, churn) {
     if (hotspots.length === 0) {
         document.querySelector('#hotspot-table tbody').innerHTML =
             '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">' +
-            'No hotspots detected. ' +
+            'No hotspot files found. ' +
             (!churn.top_files || churn.top_files.length === 0
-                ? 'No churn data was found, so hotspots cannot be computed.'
-                : 'The high-rank and high-churn files did not overlap.') + '</td></tr>';
-        document.getElementById('hotspot-viz').style.display = 'none';
+                ? 'No churn data was available to cross-reference.'
+                : 'No files appeared in both the high-rank and high-churn sets.') + '</td></tr>';
     } else {
-        document.getElementById('hotspot-viz').style.display = 'block';
         document.querySelector('#hotspot-table tbody').innerHTML = hotspots.map(h =>
             `<tr class="hotspot-row">
                 <td>${h.file}</td>
@@ -354,58 +360,118 @@ function renderHotspots(hotspots, churn) {
     }
 }
 
-/* ---- Hotspot Bubble Chart ---- */
-function drawHotspotViz(hotspots) {
-    const canvas = document.getElementById('hotspot-canvas');
-    if (!hotspots || !hotspots.length) return;
+function drawPrioritizationMatrix(data) {
+    const canvas = document.getElementById('matrix-canvas');
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width = rect.width; canvas.height = 340;
+    canvas.width = rect.width; canvas.height = 480;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const pad = 60;
-    const w = canvas.width - pad * 2, h = canvas.height - pad * 2;
-    const maxPR = Math.max(...hotspots.map(d => d.pagerank_score)) || 1;
-    const maxCommits = Math.max(...hotspots.map(d => d.commits)) || 1;
-    const maxChurn = Math.max(...hotspots.map(d => d.total_churn)) || 1;
-    const maxScore = Math.max(...hotspots.map(d => d.hotspot_score)) || 1;
+    // Build merged dataset: match ranked files to churn files
+    const churnMap = {};
+    (data.churn.top_files || []).forEach(f => { churnMap[f.filename] = f; });
+    const ranked = data.repomap.ranked_files || [];
+
+    const points = [];
+    ranked.forEach(r => {
+        let churnData = null;
+        for (const [cname, cd] of Object.entries(churnMap)) {
+            if (r.file.endsWith(cname) || cname.endsWith(r.file) || r.file === cname) {
+                churnData = cd; break;
+            }
+        }
+        points.push({
+            file: r.file,
+            pagerank: r.pagerank_score,
+            commits: churnData ? churnData.commits : 0,
+            churn: churnData ? churnData.total_churn : 0,
+        });
+    });
+
+    if (!points.length) {
+        ctx.fillStyle = '#8b949e'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('No data to display', canvas.width / 2, 240); return;
+    }
+
+    const pad = { top: 40, right: 30, bottom: 50, left: 70 };
+    const w = canvas.width - pad.left - pad.right;
+    const h = canvas.height - pad.top - pad.bottom;
+    const maxCommits = Math.max(...points.map(p => p.commits), 1);
+    const maxPR = Math.max(...points.map(p => p.pagerank)) || 1;
+    const medianCommits = maxCommits * 0.3;
+    const medianPR = maxPR * 0.3;
+
+    // Quadrant backgrounds
+    const midX = pad.left + (medianCommits / maxCommits) * w;
+    const midY = pad.top + h - (medianPR / maxPR) * h;
+
+    ctx.fillStyle = 'rgba(248, 81, 73, 0.06)';
+    ctx.fillRect(midX, pad.top, pad.left + w - midX, midY - pad.top);
+    ctx.fillStyle = 'rgba(88, 166, 255, 0.06)';
+    ctx.fillRect(pad.left, pad.top, midX - pad.left, midY - pad.top);
+    ctx.fillStyle = 'rgba(210, 153, 34, 0.06)';
+    ctx.fillRect(midX, midY, pad.left + w - midX, pad.top + h - midY);
+    ctx.fillStyle = 'rgba(63, 185, 80, 0.06)';
+    ctx.fillRect(pad.left, midY, midX - pad.left, pad.top + h - midY);
+
+    // Quadrant labels
+    ctx.font = '12px sans-serif'; ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#f85149'; ctx.textAlign = 'right';
+    ctx.fillText('HIGHEST RISK', pad.left + w - 8, pad.top + 16);
+    ctx.fillStyle = '#58a6ff'; ctx.textAlign = 'left';
+    ctx.fillText('STABLE & CENTRAL', pad.left + 8, pad.top + 16);
+    ctx.fillStyle = '#d29922'; ctx.textAlign = 'right';
+    ctx.fillText('FRAGILE BUT ISOLATED', pad.left + w - 8, pad.top + h - 8);
+    ctx.fillStyle = '#3fb950'; ctx.textAlign = 'left';
+    ctx.fillText('SAFE TERRITORY', pad.left + 8, pad.top + h - 8);
+    ctx.globalAlpha = 1;
+
+    // Divider lines
+    ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(midX, pad.top); ctx.lineTo(midX, pad.top + h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad.left, midY); ctx.lineTo(pad.left + w, midY); ctx.stroke();
+    ctx.setLineDash([]);
 
     // Axes
     ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, pad + h); ctx.lineTo(pad + w, pad + h); ctx.stroke();
-    ctx.fillStyle = '#8b949e'; ctx.font = '12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Commits (churn frequency)', pad + w/2, canvas.height - 8);
-    ctx.save(); ctx.translate(14, pad + h/2); ctx.rotate(-Math.PI/2);
-    ctx.fillText('PageRank (importance)', 0, 0); ctx.restore();
+    ctx.beginPath(); ctx.moveTo(pad.left, pad.top); ctx.lineTo(pad.left, pad.top + h);
+    ctx.lineTo(pad.left + w, pad.top + h); ctx.stroke();
+    ctx.fillStyle = '#8b949e'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Commits (churn frequency)', pad.left + w / 2, canvas.height - 8);
+    ctx.save(); ctx.translate(16, pad.top + h / 2); ctx.rotate(-Math.PI / 2);
+    ctx.fillText('PageRank (structural importance)', 0, 0); ctx.restore();
 
-    // Bubbles
-    hotspots.forEach(d => {
-        const x = pad + (d.commits / maxCommits) * w;
-        const y = pad + h - (d.pagerank_score / maxPR) * h;
-        const r = 8 + (d.total_churn / maxChurn) * 30;
-        const t = d.hotspot_score / maxScore;
+    // Plot points
+    const maxChurn = Math.max(...points.map(p => p.churn), 1);
+    points.forEach(p => {
+        const x = pad.left + (p.commits / maxCommits) * w;
+        const y = pad.top + h - (p.pagerank / maxPR) * h;
+        const r = 4 + (p.churn / maxChurn) * 18;
 
-        // Color: green (low risk) -> yellow -> red (high risk)
-        const red = Math.round(248 * t + 63 * (1-t));
-        const green = Math.round(81 * t + 185 * (1-t));
-        const blue = Math.round(73 * t + 80 * (1-t));
-        ctx.globalAlpha = 0.7;
+        const isHighChurn = p.commits > medianCommits;
+        const isHighRank = p.pagerank > medianPR;
+        let color;
+        if (isHighChurn && isHighRank) color = '#f85149';
+        else if (isHighChurn && !isHighRank) color = '#d29922';
+        else if (!isHighChurn && isHighRank) color = '#58a6ff';
+        else color = '#3fb950';
+
+        ctx.globalAlpha = 0.6;
         ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgb(${red},${green},${blue})`; ctx.fill();
-        ctx.strokeStyle = `rgba(${red},${green},${blue},0.9)`; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = color; ctx.fill();
         ctx.globalAlpha = 1;
 
-        // Label
-        const parts = d.file.split('/');
-        const lbl = parts.length > 1 ? parts.slice(-1)[0] : d.file;
-        ctx.fillStyle = '#c9d1d9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(lbl, x, y - r - 4);
+        if (r > 10 || p.pagerank > maxPR * 0.5 || p.commits > maxCommits * 0.5) {
+            const parts = p.file.split('/');
+            const lbl = parts.length > 1 ? parts.slice(-1)[0] : p.file;
+            ctx.fillStyle = '#c9d1d9'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText(lbl, x, y - r - 3);
+        }
     });
 
-    // Legend
     ctx.fillStyle = '#8b949e'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText('Bubble size = total churn    Color = hotspot risk (green=low, red=high)', pad, pad - 10);
+    ctx.fillText('Bubble size = total churn (lines changed)', pad.left, pad.top - 12);
 }
 
 /* ---- AST Tree ---- */

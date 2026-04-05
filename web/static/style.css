@@ -468,8 +468,32 @@ details > summary::before {
 }
 details[open] > summary::before { transform: rotate(90deg); }
 
-/* Hotspot viz */
-#hotspot-viz {
+/* Prioritization matrix */
+.quadrant-legend {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+.q-item {
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+.q-item strong { display: block; margin-bottom: 2px; }
+.q-danger { background: rgba(248, 81, 73, 0.08); }
+.q-danger strong { color: #f85149; }
+.q-warning { background: rgba(210, 153, 34, 0.08); }
+.q-warning strong { color: #d29922; }
+.q-stable { background: rgba(88, 166, 255, 0.08); }
+.q-stable strong { color: #58a6ff; }
+.q-safe { background: rgba(63, 185, 80, 0.08); }
+.q-safe strong { color: #3fb950; }
+
+#matrix-viz {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
