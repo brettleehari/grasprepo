@@ -66,7 +66,7 @@
             <div class="step-num">4</div>
             <div class="step-content">
                 <h3>Measure Code Churn</h3>
-                <p>Git history reveals which files change most often, who changes them, and how much. High churn signals active development, instability, or tech debt. Agents use this to understand what's "hot" in the codebase right now.</p>
+                <p>findchurn analyzes version control history. Point it at a repository with a time window and it tells you: how many commits, how many contributors, how much code was added and removed. A file with <strong>200 commits in three months by eight different developers</strong> is structurally different from a file with <strong>five stable commits by one developer</strong>. findchurn makes the difference visible.</p>
             </div>
         </div>
         <div class="step">
@@ -114,6 +114,7 @@
 
     <!-- Tab: Churn -->
     <div class="tab-panel" id="panel-churn">
+        <p style="color:var(--text-muted);margin-bottom:12px;">Files ranked by commit frequency over the last 6 months. High commit count + many contributors signals active, potentially volatile code. Low commits + single contributor signals stability.</p>
         <div id="churn-warning" style="display:none;" class="status"></div>
         <div class="table-wrap">
             <table id="churn-table">
