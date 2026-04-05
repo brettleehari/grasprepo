@@ -417,6 +417,7 @@ tr.highlight td:first-child .rank-badge { background: var(--green); }
 .nav-cta-btn:hover { opacity: 0.85; text-decoration: none !important; }
 .nav-cta-github { background: #238636; color: #fff !important; }
 .nav-cta-medium { background: #fff; color: #000 !important; }
+.nav-cta-substack { background: #FF6719; color: #fff !important; }
 
 @media (max-width: 600px) {
     .nav-cta-btn span { display: none; }
